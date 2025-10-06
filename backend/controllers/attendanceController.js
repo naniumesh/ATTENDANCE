@@ -68,32 +68,41 @@ async function cleanupExpiredSchedules() {
 }
 
 // -----------------------------------------------------
-// Helper: Validate class time for attendance
-// (prefer scheduleId; fallback to classDate)
+// Helper: Convert local date+time safely (timezone proof)
+// -----------------------------------------------------
+function localToUTC(dateStr, timeStr) {
+  const [hour, minute] = timeStr.split(":").map(Number);
+  const local = new Date(dateStr + "T00:00:00"); // fix: prevents UTC date drift
+  local.setHours(hour, minute, 0, 0);
+  return local;
+}
+
+// -----------------------------------------------------
+// Helper: Validate class time for attendance (timezone safe)
 // -----------------------------------------------------
 async function validateAttendanceTime({ scheduleId, classDate }) {
   let schedule = null;
 
   if (scheduleId) {
     if (!mongoose.Types.ObjectId.isValid(scheduleId)) {
-      throw new Error("Invalid scheduleId provided.");
+      throw new Error("Invalid or expired class schedule.");
     }
     schedule = await ClassSchedule.findById(scheduleId).lean();
-    if (!schedule) {
-      throw new Error("Schedule not found for the provided scheduleId.");
+    if (!schedule.date || !schedule.startTime || !schedule.endTime) {
+      throw new Error("Invalid or expired class schedule.");
     }
   } else if (classDate) {
     schedule = await ClassSchedule.findOne({ date: classDate }).lean();
-    if (!schedule) {
-      throw new Error("No schedule found for this date.");
+    if (!schedule.date || !schedule.startTime || !schedule.endTime) {
+      throw new Error("Invalid or expired class schedule.");
     }
   } else {
     throw new Error("Either scheduleId or classDate must be provided.");
   }
 
   const now = new Date();
-  const startDateTime = new Date(`${schedule.date}T${schedule.startTime}`);
-  const endDateTime = new Date(`${schedule.date}T${schedule.endTime}`);
+  const startDateTime = localToUTC(schedule.date, schedule.startTime);
+  const endDateTime = localToUTC(schedule.date, schedule.endTime);
 
   if (now < startDateTime) {
     throw new Error("Attendance can only be taken after the start time.");
@@ -104,6 +113,7 @@ async function validateAttendanceTime({ scheduleId, classDate }) {
 
   return schedule;
 }
+
 
 // -----------------------------------------------------
 // GET ALL ATTENDANCE RECORDS
@@ -189,7 +199,7 @@ exports.updateAttendance = async (req, res) => {
 
     // Validate schedule time
     const schedule = await validateAttendanceTime({ scheduleId, classDate });
-    const recordClassDate = schedule.date;
+    const recordClassDate = new Date(schedule.date).toISOString().split("T")[0];
 
     // -----------------------------------------------------
     // CASE 1: Staff updating attendance
@@ -309,7 +319,7 @@ exports.bulkAttendance = async (req, res) => {
 
     const schedule = await validateAttendanceTime({ scheduleId, classDate });
     const targetScheduleId = String(schedule._id);
-    const recordClassDate = schedule.date;
+    const recordClassDate = new Date(schedule.date).toISOString().split("T")[0];
 
     // Prevent duplicate submission by same staff for same schedule
     const historyExists = await ClassHistory.findOne({
@@ -425,6 +435,18 @@ exports.getStudentsPresentOnDate = async (req, res) => {
 };
 
 // -----------------------------------------------------
+// Throttled cleanup (runs at most once per hour)
+// -----------------------------------------------------
+let lastCleanup = 0;
+async function maybeCleanup() {
+  const now = Date.now();
+  if (now - lastCleanup > 60 * 60 * 1000) { // once every 60 min
+    await cleanupExpiredSchedules();
+    lastCleanup = now;
+  }
+}
+
+// -----------------------------------------------------
 // GET ALL SCHEDULED CLASSES (for Staff Page)
 // - returns schedules that the calling staff has NOT yet acted on (submitted or been auto-processed)
 // -----------------------------------------------------
@@ -433,7 +455,7 @@ exports.getSchedules = async (req, res) => {
 
   try {
     // ensure cleanup for expired schedules first
-    await cleanupExpiredSchedules();
+    await maybeCleanup();
 
     const schedules = await ClassSchedule.find({}, { date: 1, startTime: 1, endTime: 1 })
       .sort({ date: 1, startTime: 1 })
@@ -481,7 +503,7 @@ exports.getAllAttendanceDates = async (req, res) => {
 exports.getClassHistory = async (req, res) => {
   try {
     // ensure expired schedules processed first
-    await cleanupExpiredSchedules();
+    await maybeCleanup();
 
     const history = await ClassHistory.find().populate("staffId", "name").sort({ classDate: -1 }).lean();
 

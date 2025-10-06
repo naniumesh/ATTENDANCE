@@ -68,14 +68,22 @@ async function cleanupExpiredSchedules() {
 }
 
 // -----------------------------------------------------
-// Helper: Convert local date+time safely (timezone proof)
+// Helper: Convert schedule date + time (assumed IST) to a UTC Date
 // -----------------------------------------------------
 function localToUTC(dateStr, timeStr) {
+  // dateStr expected "YYYY-MM-DD", timeStr expected "HH:mm"
+  const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000; // +05:30 in ms
+
+  const [year, month, day] = dateStr.split("-").map(Number); // month 1-12
   const [hour, minute] = timeStr.split(":").map(Number);
-  const local = new Date(dateStr + "T00:00:00"); // fix: prevents UTC date drift
-  local.setHours(hour, minute, 0, 0);
-  return local;
+
+  // Date.UTC builds a timestamp for that Y-M-D H:m as if it were UTC.
+  // To get the UTC time that corresponds to the same wall-clock time in IST,
+  // subtract the IST offset: UTC_ms = Date.UTC(...) - IST_OFFSET_MS
+  const utcMillisForIST = Date.UTC(year, month - 1, day, hour, minute, 0) - IST_OFFSET_MS;
+  return new Date(utcMillisForIST);
 }
+
 
 // -----------------------------------------------------
 // Helper: Validate class time for attendance (timezone safe)
@@ -103,6 +111,11 @@ async function validateAttendanceTime({ scheduleId, classDate }) {
   const now = new Date();
   const startDateTime = localToUTC(schedule.date, schedule.startTime);
   const endDateTime = localToUTC(schedule.date, schedule.endTime);
+
+  console.log("validateAttendanceTime: schedule.date, startTime, endTime:", schedule.date, schedule.startTime, schedule.endTime);
+  console.log("startDateTime (UTC) =>", startDateTime.toISOString());
+  console.log("endDateTime   (UTC) =>", endDateTime.toISOString());
+  console.log("server now (UTC) =>", now.toISOString());
 
   if (now < startDateTime) {
     throw new Error("Attendance can only be taken after the start time.");

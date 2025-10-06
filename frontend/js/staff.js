@@ -35,6 +35,7 @@ let students = [];
 let presentStudents = [];
 
 let selectedClassDate = "";
+let selectedScheduleId = "";
 let currentStartTime = "";
 let currentEndTime = "";
 
@@ -285,6 +286,7 @@ document.getElementById("confirmSubmitBtn")?.addEventListener("click", async () 
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         staffId,
+        scheduleId: selectedScheduleId,
         classDate,
         presentStudentIds: presentStudents.map(s => s._id),
         pin: enteredPin
@@ -339,7 +341,7 @@ async function loadSchedules() {
       else btn.style.backgroundColor = "gray";
 
       btn.innerHTML = `<div>${s.date}</div><div>${s.startTime} - ${s.endTime}</div>`;
-      btn.addEventListener("click", () => handleScheduleClick(s.date, s.startTime, s.endTime));
+      btn.addEventListener("click", () => handleScheduleClick(s._id, s.date, s.startTime, s.endTime));
       container.appendChild(btn);
     });
   } catch (err) {
@@ -347,7 +349,7 @@ async function loadSchedules() {
   }
 }
 
-function handleScheduleClick(date, startTime, endTime) {
+function handleScheduleClick(scheduleId, date, startTime, endTime) {
   const now = new Date();
   const status = getScheduleStatus(now, date, startTime, endTime);
 
@@ -360,6 +362,8 @@ function handleScheduleClick(date, startTime, endTime) {
     return;
   }
 
+  // ✅ Fix: store schedule ID globally
+  selectedScheduleId = scheduleId;
   selectedClassDate = date;
   currentStartTime = startTime;
   currentEndTime = endTime;

@@ -743,7 +743,6 @@ async function updateAttendancePrompt(studentId) {
         body: JSON.stringify({
           studentId,
           classDate,
-          scheduleId,
           status,
           pin
         })

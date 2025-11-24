@@ -81,9 +81,8 @@ document.getElementById("closeHistoryBtn")?.addEventListener("click", () => {
 document.querySelectorAll(".staff-class-btn").forEach(btn => {
   btn.addEventListener("click", () => {
     selectedClass = btn.getAttribute("data-class");
-    selectedYear = ""; // Reset year when class changes
+    selectedYear = "";
 
-    // Render year filter
     yearContainerEl.innerHTML = `
       <label>Filter Year:</label>
       <select id="staffYearFilter">
@@ -126,18 +125,22 @@ async function loadStudents() {
 }
 
 // -----------------------------
-// Render student table (MODIFIED)
+// Render student table
 // -----------------------------
 function renderStudentTable() {
   const keyword = studentSearchEl?.value.toLowerCase() || "";
   let filtered = students;
 
   if (selectedClass) {
-    filtered = filtered.filter(s => s.classSection === selectedClass);
+    filtered = filtered.filter(
+      s => String(s.classSection).trim().toLowerCase() === selectedClass.trim().toLowerCase()
+    );
   }
+
   if (selectedYear) {
     filtered = filtered.filter(s => String(s.year) === selectedYear);
   }
+
   if (keyword) {
     filtered = filtered.filter(s =>
       s.name?.toLowerCase().includes(keyword) ||
@@ -167,7 +170,6 @@ function renderStudentTable() {
       `;
       studentTableBody.appendChild(row);
 
-      // Checkbox event
       row.querySelector("input[type=checkbox]")?.addEventListener("change", e => {
         const id = e.target.dataset.id;
         if (e.target.checked) addToPresent(id);
@@ -203,7 +205,7 @@ function removeFromPresent(id) {
 }
 
 // -----------------------------
-// Save Draft in LocalStorage
+// Save Draft
 // -----------------------------
 function saveDraft() {
   if (!selectedClassDate) return;
@@ -219,7 +221,7 @@ function loadDraft() {
 }
 
 // -----------------------------
-// Render attendance counts (MODIFIED)
+// Render Counts
 // -----------------------------
 function renderAttendanceCounts() {
   const totalPresent = presentStudents.length;
@@ -242,13 +244,10 @@ function renderAttendanceCounts() {
   });
 }
 
-// -----------------------------
-// Search input
-// -----------------------------
 studentSearchEl?.addEventListener("input", renderStudentTable);
 
 // -----------------------------
-// Attendance Submission Modal
+// Submit Attendance Modal
 // -----------------------------
 document.getElementById("submitAttendance")?.addEventListener("click", () => {
   if (presentStudents.length === 0) {
@@ -316,7 +315,7 @@ document.getElementById("confirmSubmitBtn")?.addEventListener("click", async () 
 });
 
 // -----------------------------
-// Load Schedules (MODIFIED)
+// Load Schedules
 // -----------------------------
 loadSchedules();
 async function loadSchedules() {
@@ -362,7 +361,6 @@ function handleScheduleClick(scheduleId, date, startTime, endTime) {
     return;
   }
 
-  // ✅ Fix: store schedule ID globally
   selectedScheduleId = scheduleId;
   selectedClassDate = date;
   currentStartTime = startTime;
@@ -376,7 +374,6 @@ function handleScheduleClick(scheduleId, date, startTime, endTime) {
   });
 }
 
-
 // -----------------------------
 // Attendance History
 // -----------------------------
@@ -386,77 +383,128 @@ function loadHistory() {
     .then(dates => {
       const container = document.getElementById("historyContent");
       container.innerHTML = "";
-      if (dates.length === 0) container.innerHTML = "<p>No attendance history.</p>";
-      else dates.forEach(date => {
-        const div = document.createElement("div");
-        div.innerHTML = `<strong>${date}</strong>`;
-        div.style.cursor = "pointer";
-        div.onclick = () => showSummary(date);
-        container.appendChild(div);
-      });
+
+      if (dates.length === 0) {
+        container.innerHTML = "<p>No attendance history.</p>";
+      } else {
+        dates.forEach(date => {
+          const div = document.createElement("div");
+          div.innerHTML = `<strong>${date}</strong>`;
+          div.style.cursor = "pointer";
+          div.onclick = () => showSummary(date);
+          container.appendChild(div);
+        });
+      }
     })
     .catch(err => console.error(err));
 }
 
+// ⭐ RANK ORDER ADDED
+const RANK_ORDER = ["SUO", "UO", "CSM", "CQMS", "SGT", "CPL", "L/CPL", "CDT"];
+
+// ⭐ NEW — FULL GROUPING (CLASS → YEAR → SD/SW)
+function groupByClassFull(students) {
+  const grouped = {};
+
+  students.forEach(s => {
+    const cls = s.classSection || "Unknown";
+
+    let yearValue = parseInt(s.year);
+    
+    const year =
+    yearValue === 3 ? "3rd Year" :
+    yearValue === 2 ? "2nd Year" :
+    yearValue === 1 ? "1st Year" :
+    "Not Assigned";
+
+    const gender = (s.gender || "").toLowerCase() === "male" ? "SD" : "SW";
+
+    if (!grouped[cls]) grouped[cls] = {};
+    if (!grouped[cls][year]) grouped[cls][year] = { SD: [], SW: [] };
+
+    grouped[cls][year][gender].push({
+      name: s.name,
+      rank: s.rank || "CDT"
+    });
+  });
+
+  return grouped;
+}
+
+// ⭐ NEW — FULL FORMATTED SUMMARY
 function showSummary(date) {
   fetch(`${API_BASE}/attendance/present/${date}?staffId=${staffId}`)
     .then(res => res.json())
-    .then(presentList => {
-      const grouped = groupByClassAndGender(presentList);
+    .then(list => {
+
+      const grouped = groupByClassFull(list);
       const summaryEl = document.getElementById("summarySection");
       summaryEl.innerHTML = `<div><strong>Date:</strong> ${date}</div><br>`;
-      let totalBoys = 0;
-      let totalGirls = 0;
 
-      // --- First: show class-wise students (rank + name) ---
-      let classCounter = 1;
-      for (const cls in grouped) {
-        summaryEl.innerHTML += `<div><strong>Class ${classCounter} (${cls}):</strong></div>`;
-        const allStudents = [...grouped[cls].boys, ...grouped[cls].girls];
-        allStudents.forEach(s => {
-          summaryEl.innerHTML += `<div>${s.rank || "-"} - ${s.name}</div>`;
+      let overallBoys = 0;
+      let overallGirls = 0;
+
+      for (const cls of Object.keys(grouped)) {
+        summaryEl.innerHTML += `<h3>*${cls}*</h3>`;
+
+        const years = Object.keys(grouped[cls]).sort((a,b)=>{
+          return parseInt(b) - parseInt(a); // 3rd → 2nd → 1st
         });
-        summaryEl.innerHTML += `<br>`;
-        classCounter++;
-      }
 
-      // --- Then: show boys/girls breakdown ---
-      for (const cls in grouped) {
-        const boys = grouped[cls].boys;
-        const girls = grouped[cls].girls;
-        totalBoys += boys.length;
-        totalGirls += girls.length;
+        let classSD = 0;
+        let classSW = 0;
+
+        for (const year of years) {
+          summaryEl.innerHTML += `<strong>${year}</strong><br>`;
+
+          const SD = grouped[cls][year].SD;
+          const SW = grouped[cls][year].SW;
+
+          // SORT BY RANK ORDER
+          SD.sort((a,b)=> RANK_ORDER.indexOf(a.rank) - RANK_ORDER.indexOf(b.rank));
+          SW.sort((a,b)=> RANK_ORDER.indexOf(a.rank) - RANK_ORDER.indexOf(b.rank));
+
+          if (SD.length > 0) {
+            summaryEl.innerHTML += `<u>SD</u><br>`;
+            SD.forEach(s=>{
+              summaryEl.innerHTML += `${s.rank} ${s.name}<br>`;
+            });
+          }
+
+          if (SW.length > 0) {
+            summaryEl.innerHTML += `<br><u>SW</u><br>`;
+            SW.forEach(s=>{
+              summaryEl.innerHTML += `${s.rank} ${s.name}<br>`;
+            });
+          }
+
+          classSD += SD.length;
+          classSW += SW.length;
+
+          summaryEl.innerHTML += `<hr>`;
+        }
 
         summaryEl.innerHTML += `
-          <div><strong>${cls}:</strong></div>
-          <div>Boys: ${boys.length}</div>
-          <div>Girls: ${girls.length}</div>
-          <div>Total: ${boys.length + girls.length}</div><br>
+          <strong>${cls} - TOTAL ${classSD+classSW}</strong><br>
+          SD: ${classSD}<br>
+          SW: ${classSW}<br><br>
         `;
+
+        overallBoys += classSD;
+        overallGirls += classSW;
       }
 
       summaryEl.innerHTML += `
-        <strong>Overall Boys:</strong> ${totalBoys}<br>
-        <strong>Overall Girls:</strong> ${totalGirls}<br>
-        <strong>Overall Total:</strong> ${totalBoys + totalGirls}<br><br>
-        <button onclick="backToHistory()">Back to History</button>
+        <br><br>
+        <strong>Overall Boys (SD):</strong> ${overallBoys}<br>
+        <strong>Overall Girls (SW):</strong> ${overallGirls}<br>
+        <strong>Overall Total:</strong> ${overallBoys + overallGirls}<br>
+        <button onclick="backToHistory()">Back</button>
       `;
+
       document.getElementById("historyContent").style.display = "none";
       summaryEl.style.display = "block";
-    })
-    .catch(err => console.error(err));
-}
-
-
-function groupByClassAndGender(students) {
-  const grouped = {};
-  students.forEach(s => {
-    const cls = s.classSection || "Unknown";
-    if (!grouped[cls]) grouped[cls] = { boys: [], girls: [] };
-    if ((s.gender || "").toLowerCase() === "male") grouped[cls].boys.push(s);
-    else grouped[cls].girls.push(s);
-  });
-  return grouped;
+    });
 }
 
 function backToHistory() {

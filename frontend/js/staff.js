@@ -1,4 +1,4 @@
-const API_BASE = "http://localhost:5000/api";
+const API_BASE = "https://attendance-jmxr.onrender.com/api";
 let logoutInProgress = false;
 
 // -----------------------------
@@ -667,5 +667,6 @@ function getScheduleStatus(now, dateStr, start, end) {
   if (now >= startTime && now <= endTime) return "active";
   return "expired";
 }
+
 
 loadSchedules();

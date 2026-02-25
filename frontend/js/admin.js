@@ -1,4 +1,4 @@
-const API_BASE = "https://attendance-jmxr.onrender.com/api";
+const API_BASE = "http://localhost:5000/api";
 
 // Show/hide sections
 function showSection(sectionId) {
@@ -188,9 +188,16 @@ document.getElementById("studentForm")?.addEventListener("submit", async (e) => 
 
 // Excel Upload
 async function uploadExcel() {
-  const file = document.getElementById("excelFile").files[0];
+  const input = document.getElementById("excelFile");
+  const file = input.files[0];
+
   if (!file) {
-    alert("Please select an Excel file first.");
+    alert("Please select an Excel file.");
+    return;
+  }
+
+  if (file.name === lastUploadedFileName) {
+    alert("This file has already been uploaded.");
     return;
   }
 
@@ -200,21 +207,49 @@ async function uploadExcel() {
   try {
     const res = await fetch(`${API_BASE}/students/upload-excel`, {
       method: "POST",
-      body: formData,
+      body: formData
     });
 
-    if (res.ok) {
-      alert("Excel uploaded successfully.");
-      fetchStudents(selectedClass, selectedYear);
-    } else {
-      const result = await res.json();
-      alert(result.error || "Failed to upload Excel.");
+    const result = await res.json();
+
+    if (!res.ok) {
+      alert(result.message || "Upload failed");
+      return;
     }
+
+    alert(`✅ Upload successful\nFile: ${result.fileName}\nStudents Added: ${result.inserted}`);
+
+    lastUploadedFileName = file.name;
+    input.value = "";
+    document.getElementById("selectedFileName").textContent = "";
+
+    fetchStudents();
   } catch (err) {
-    alert("Server error.");
     console.error(err);
+    alert("Server error during upload.");
   }
 }
+
+let lastUploadedFileName = null;
+
+document.getElementById("excelFile")?.addEventListener("change", (e) => {
+  const file = e.target.files[0];
+  const fileNameEl = document.getElementById("selectedFileName");
+
+  if (!file) {
+    fileNameEl.textContent = "";
+    return;
+  }
+
+  if (file.name === lastUploadedFileName) {
+    alert("⚠ This file was already uploaded.");
+    e.target.value = "";
+    fileNameEl.textContent = "";
+    return;
+  }
+
+  fileNameEl.textContent = `Selected File: ${file.name}`;
+});
 
 // Search input
 document.getElementById("studentSearch")?.addEventListener("input", () => {
@@ -976,4 +1011,152 @@ function showSummary(date) {
     .catch(err => {
       console.error("showSummary error:", err);
     });
+}
+
+// ===============================
+// DELETE STUDENTS BY YEAR (ADMIN)
+// ===============================
+let deleteYearCache = null;
+
+async function checkDeleteByYear() {
+  const year = document.getElementById("deleteYearSelect").value;
+  if (!year) return alert("Select a year first");
+
+  const res = await fetch(`${API_BASE}/students/delete-by-year`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ year })
+  });
+
+  const data = await res.json();
+  deleteYearCache = year;
+
+  document.getElementById("deleteYearInfo").innerHTML = `
+    Year ${year} → Boys: ${data.boys}, Girls: ${data.girls}, Total: ${data.total}
+  `;
+}
+
+async function confirmDeleteByYear() {
+  if (!deleteYearCache) return alert("Check year count first");
+
+  if (!confirm("⚠ This will permanently delete all students of this year. Continue?")) return;
+
+  const res = await fetch(`${API_BASE}/students/delete-by-year`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ year: deleteYearCache, confirm: true })
+  });
+
+  const data = await res.json();
+  alert(data.message);
+  fetchStudents();
+  document.getElementById("deleteYearInfo").innerHTML = "";
+  deleteYearCache = null;
+}
+
+function downloadExcelTemplate() {
+  window.location.href = `${API_BASE}/students/download-template`;
+}
+
+let deleteFileCache = null;
+
+async function checkDeleteByFile() {
+  const fileName = document.getElementById("deleteFileName").value.trim();
+  if (!fileName) return alert("Enter file name");
+
+  const res = await fetch(`${API_BASE}/students/delete-by-file`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ fileName })
+  });
+
+  const data = await res.json();
+  if (!res.ok) return alert(data.message);
+
+  deleteFileCache = fileName;
+  document.getElementById("deleteFileInfo").innerText =
+    `File: ${fileName} → Students: ${data.total}`;
+}
+
+async function confirmDeleteByFile() {
+  if (!deleteFileCache) return alert("Check file first");
+
+  if (!confirm("⚠ This will delete all students from this Excel file. Continue?")) return;
+
+  const res = await fetch(`${API_BASE}/students/delete-by-file`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ fileName: deleteFileCache, confirm: true })
+  });
+
+  const data = await res.json();
+  alert(data.message);
+
+  deleteFileCache = null;
+  document.getElementById("deleteFileInfo").innerText = "";
+  fetchStudents();
+}
+
+let promotionCache = null;
+
+async function checkPromotion() {
+  const fromYear = document.getElementById("fromYear").value;
+  const toYear = document.getElementById("toYear").value;
+
+  if (!fromYear || !toYear) return alert("Select both years");
+
+  const res = await fetch(`${API_BASE}/students/promote`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ fromYear, toYear })
+  });
+
+  const data = await res.json();
+  if (!res.ok) return alert(data.message);
+
+  promotionCache = { fromYear, toYear };
+  document.getElementById("promotionInfo").innerText =
+    `Students to promote: ${data.total}`;
+}
+
+async function confirmPromotion() {
+  if (!promotionCache) return alert("Check promotion first");
+
+  if (!confirm("⚠ This will permanently change student years. Continue?")) return;
+
+  const res = await fetch(`${API_BASE}/students/promote`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ...promotionCache, confirm: true })
+  });
+
+  const data = await res.json();
+  alert(data.message);
+
+  promotionCache = null;
+  document.getElementById("promotionInfo").innerText = "";
+  fetchStudents();
+}
+
+// ===============================
+// TOGGLE UI BLOCKS
+// ===============================
+function toggleDeleteYear() {
+  const del = document.getElementById("deleteYearBlock");
+  const promo = document.getElementById("promotionBlock");
+
+  // close promotion if open
+  if (promo) promo.style.display = "none";
+
+  del.style.display = del.style.display === "none" ? "block" : "none";
+}
+
+function togglePromotion() {
+  const promo = document.getElementById("promotionBlock");
+  const del = document.getElementById("deleteYearBlock");
+
+  // close delete if open
+  if (del) del.style.display = "none";
+
+  promo.style.display = promo.style.display === "none" ? "block" : "none";
 }

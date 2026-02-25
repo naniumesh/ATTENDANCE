@@ -1,27 +1,13 @@
-const API_BASE = "https://attendance-jmxr.onrender.com/api";
+const API_BASE = "http://localhost:5000/api";
+let logoutInProgress = false;
 
 // -----------------------------
 // Staff login/session check
 // -----------------------------
-window.addEventListener("load", () => {
-  const isLoggedIn = localStorage.getItem("loggedIn");
-  const id = localStorage.getItem("staffId");
-  const name = localStorage.getItem("staffName");
-  const username = localStorage.getItem("staffUsername");
-
-  if (!isLoggedIn || !id || !name || !username) {
-    localStorage.clear();
-    alert("Session expired. Please log in again.");
-    window.location.href = "staff-login.html";
-  }
-});
-
 const staffId = localStorage.getItem("staffId");
 const staffName = localStorage.getItem("staffName");
 const staffUsername = localStorage.getItem("staffUsername");
-
 if (!staffId) {
-  alert("Staff ID missing. Please log in again.");
   localStorage.clear();
   window.location.href = "staff-login.html";
 }
@@ -39,8 +25,7 @@ let selectedScheduleId = "";
 let currentStartTime = "";
 let currentEndTime = "";
 
-const completedDatesKey = `completedDates_${staffId}`;
-let completedDates = JSON.parse(localStorage.getItem(completedDatesKey) || "[]");
+let completedScheduleIds = new Set();
 
 // DOM Elements
 const staffInfoEl = document.getElementById("staffInfo");
@@ -59,7 +44,13 @@ if (staffInfoEl) {
 // -----------------------------
 // Logout & History
 // -----------------------------
-document.getElementById("logoutBtn")?.addEventListener("click", () => {
+document.getElementById("logoutBtn")?.addEventListener("click", async () => {
+  await fetch(`${API_BASE}/staff/logout`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ staffId })
+  });
+
   localStorage.clear();
   window.location.href = "staff-login.html";
 });
@@ -149,37 +140,82 @@ function renderStudentTable() {
     );
   }
 
+  const presentIds = new Set(presentStudents.map(s => s._id));
+
+  const presentRows = filtered.filter(s => presentIds.has(s._id));
+  const absentRows = filtered.filter(s => !presentIds.has(s._id));
+
   studentTableBody.innerHTML = "";
-  if (filtered.length === 0) {
-    studentTableBody.innerHTML = `<tr><td colspan="5" style="text-align:center;">No students found</td></tr>`;
-  } else {
-    const now = new Date();
-    const withinSchedule = isWithinSchedule(now, selectedClassDate, currentStartTime, currentEndTime);
 
-    filtered.forEach(s => {
-      const present = presentStudents.find(p => p._id === s._id) ? "checked" : "";
-      const row = document.createElement("tr");
-      row.innerHTML = `
-        <td>${s.rank || "-"}</td>
-        <td>${s.name}</td>
-        <td>${s.regNo || "-"}</td>
-        <td>${s.rollNo || "-"}</td>
-        <td>
-          <input type="checkbox" style="transform:scale(1.5);" data-id="${s._id}" ${present} ${withinSchedule ? "" : "disabled"} />
-        </td>
-      `;
-      studentTableBody.appendChild(row);
+  const now = new Date();
+  const withinSchedule = isWithinSchedule(
+    now,
+    selectedClassDate,
+    currentStartTime,
+    currentEndTime
+  );
 
-      row.querySelector("input[type=checkbox]")?.addEventListener("change", e => {
-        const id = e.target.dataset.id;
-        if (e.target.checked) addToPresent(id);
-        else removeFromPresent(id);
-        saveDraft();
-      });
-    });
+  // 🔵 PRESENT SECTION
+  if (presentRows.length > 0) {
+    const header = document.createElement("tr");
+    header.innerHTML = `<td colspan="5" style="background:#e6ffe6;font-weight:bold">PRESENT</td>`;
+    studentTableBody.appendChild(header);
   }
 
+  presentRows.forEach(s => appendRow(s, true, withinSchedule));
+
+  // 🔴 ABSENT SECTION
+  if (absentRows.length > 0) {
+    const header = document.createElement("tr");
+    header.innerHTML = `<td colspan="5" style="background:#ffe6e6;font-weight:bold">ABSENT</td>`;
+    studentTableBody.appendChild(header);
+  }
+
+  absentRows.forEach(s => appendRow(s, false, withinSchedule));
+
   renderAttendanceCounts();
+}
+
+// -----------------------------
+//HELPER FUNCTION
+// -----------------------------
+function appendRow(student, isPresent, withinSchedule) {
+  const row = document.createElement("tr");
+
+  row.innerHTML = `
+    <td>${student.rank || "-"}</td>
+    <td>${student.name}</td>
+    <td>${student.regNo || "-"}</td>
+    <td>${student.rollNo || "-"}</td>
+    <td>
+      <label class="switch">
+        <input type="checkbox"
+          data-id="${student._id}"
+          ${isPresent ? "checked" : ""}
+          ${withinSchedule ? "" : "disabled"}>
+        <span class="slider"></span>
+      </label>
+    </td>
+  `;
+
+  row.querySelector("input").addEventListener("change", e => {
+    const id = e.target.dataset.id;
+
+    if (e.target.checked) {
+      addToPresent(id);
+    } else {
+      const student = students.find(s => s._id === id);
+      if (!confirm(`Mark ${student.name} as ABSENT?`)) {
+        e.target.checked = true;
+        return;
+      }
+      removeFromPresent(id);
+    }
+
+    saveDraft();
+  });
+
+  studentTableBody.appendChild(row);
 }
 
 // -----------------------------
@@ -188,20 +224,20 @@ function renderStudentTable() {
 function addToPresent(id) {
   const student = students.find(s => s._id === id);
   if (!student) return;
-  if (!presentStudents.find(s => s._id === id)) presentStudents.push(student);
+
+  if (!presentStudents.find(s => s._id === id)) {
+    presentStudents.push(student);
+  }
+
   renderStudentTable();
 }
 
 function removeFromPresent(id) {
-  const student = presentStudents.find(s => s._id === id);
+  const student = students.find(s => s._id === id);
   if (!student) return;
 
-  if (confirm(`Are you sure to remove ${student.name} from present list?`)) {
-    presentStudents = presentStudents.filter(s => s._id !== id);
-    renderStudentTable();
-  } else {
-    renderStudentTable();
-  }
+  presentStudents = presentStudents.filter(s => s._id !== id);
+  renderStudentTable();
 }
 
 // -----------------------------
@@ -218,6 +254,7 @@ function loadDraft() {
   const draftKey = `attendanceDraft_${staffId}_${selectedClassDate}`;
   const draft = JSON.parse(localStorage.getItem(draftKey) || "[]");
   presentStudents = students.filter(s => draft.includes(s._id));
+  renderStudentTable();
 }
 
 // -----------------------------
@@ -261,12 +298,12 @@ function closeModal() {
   document.getElementById("modalOverlay").style.display = "none";
 }
 
+
 document.getElementById("confirmSubmitBtn")?.addEventListener("click", async () => {
-  const countEl = document.getElementById("confirmCount");
   const pinEl = document.getElementById("confirmPin");
   const dateEl = document.getElementById("currentDate");
 
-  if (!countEl || !pinEl || !dateEl) return;
+  if (!pinEl || !dateEl) return;
 
   const enteredPin = pinEl.value;
   const classDate = dateEl.textContent;
@@ -300,112 +337,193 @@ document.getElementById("confirmSubmitBtn")?.addEventListener("click", async () 
     const result = await res.json();
     alert(result.message);
 
-    completedDates.push(classDate);
-    localStorage.setItem(completedDatesKey, JSON.stringify(completedDates));
+    // clear draft
+    const draftKey = `attendanceDraft_${staffId}_${selectedClassDate}`;
+    localStorage.removeItem(draftKey);
 
     presentStudents = [];
     document.getElementById("attendanceSection").style.display = "none";
     closeModal();
     renderStudentTable();
-    loadSchedules();
+
+    await loadSchedules(); // ✅ reload with GOLD
+
   } catch (err) {
     console.error(err);
-    alert("Failed to submit attendance.");
+    alert(err.message || "Failed to submit attendance.");
   }
 });
 
 // -----------------------------
 // Load Schedules
 // -----------------------------
-loadSchedules();
 async function loadSchedules() {
   try {
-    const res = await fetch(`${API_BASE}/attendance/schedule?staffId=${staffId}`);
-    const data = await res.json();
     const container = document.getElementById("scheduleContainer");
     container.innerHTML = "";
 
-    const pending = data.filter(s => !completedDates.includes(s.date));
-    if (pending.length === 0) { container.innerHTML = "<p>No classes scheduled.</p>"; return; }
+    const pendingRes = await fetch(`${API_BASE}/attendance/schedule?staffId=${staffId}`);
+    const pending = await pendingRes.json();
 
-    const now = new Date();
+    const historyRes = await fetch(`${API_BASE}/attendance/all?staffId=${staffId}`);
+    const history = await historyRes.json();
 
-    pending.forEach(s => {
-      const btn = document.createElement("button");
-      btn.className = "schedule-btn";
+    // ✅ BUILD COMPLETED SET
+    completedScheduleIds = new Set(
+      Array.isArray(history)
+        ? history.map(h => String(h.scheduleId)).filter(Boolean)
+        : []
+    );
 
-      const status = getScheduleStatus(now, s.date, s.startTime, s.endTime);
-      if (status === "active") btn.style.backgroundColor = "green";
-      else if (status === "upcoming") btn.style.backgroundColor = "blue";
-      else btn.style.backgroundColor = "gray";
+    // ACTIVE (GREEN / BLUE)
+    if (Array.isArray(pending)) {
+      pending.forEach(s => {
+        if (completedScheduleIds.has(String(s._id))) return;
 
-      btn.innerHTML = `<div>${s.date}</div><div>${s.startTime} - ${s.endTime}</div>`;
-      btn.addEventListener("click", () => handleScheduleClick(s._id, s.date, s.startTime, s.endTime));
-      container.appendChild(btn);
-    });
+        const btn = document.createElement("button");
+        btn.className = "schedule-btn";
+
+        const status = getScheduleStatus(new Date(), s.date, s.startTime, s.endTime);
+        btn.style.backgroundColor =
+          status === "active" ? "green" :
+          status === "upcoming" ? "blue" : "gray";
+
+        btn.innerHTML = `
+          <div>${s.date}</div>
+          <div>${s.startTime} - ${s.endTime}</div>
+        `;
+
+        btn.onclick = () =>
+          handleScheduleClick(s._id, s.date, s.startTime, s.endTime);
+
+        container.appendChild(btn);
+      });
+    }
+
+    // COMPLETED (GOLD)
+    if (Array.isArray(history)) {
+      history.forEach(h => {
+        if (!h.scheduleId) return;
+
+        const btn = document.createElement("button");
+        btn.className = "schedule-btn";
+        btn.style.backgroundColor = "gold";
+
+        btn.innerHTML = `
+          <div>${h.date}</div>
+          <div>COMPLETED</div>
+        `;
+
+        btn.onclick = () => showSummary(h.date, h.scheduleId);
+        container.appendChild(btn);
+      });
+    }
+
+    if (
+      (!pending || pending.length === 0) &&
+      (!history || history.length === 0)
+    ) {
+      container.innerHTML = "<p>No classes scheduled.</p>";
+    }
+
   } catch (err) {
-    console.error(err);
+    console.error("Failed to load schedules:", err);
   }
 }
+
 
 function handleScheduleClick(scheduleId, date, startTime, endTime) {
-  const now = new Date();
-  const status = getScheduleStatus(now, date, startTime, endTime);
-
-  if (status === "upcoming") {
-    alert("You can only mark attendance once the class has started.");
-    return;
-  }
-  if (status === "expired") {
-    alert("This class schedule has expired.");
+  if (document.getElementById("attendanceSection").style.display === "block") {
     return;
   }
 
-  selectedScheduleId = scheduleId;
-  selectedClassDate = date;
-  currentStartTime = startTime;
-  currentEndTime = endTime;
+  fetch(`${API_BASE}/attendance/schedule?staffId=${staffId}`)
+    .then(res => res.json())
+    .then(list => {
+      const stillExists = Array.isArray(list)
+        ? list.find(s => s._id === scheduleId)
+        : null;
 
-  document.getElementById("currentDate").textContent = date;
-  document.getElementById("attendanceSection").style.display = "block";
-  loadStudents().then(() => {
-    loadDraft();
-    renderStudentTable();
-  });
+      if (!stillExists) {
+        alert("Attendance already completed. Viewing history only.");
+        showSummary(date, scheduleId);
+        return;
+      }
+
+      const status = getScheduleStatus(new Date(), date, startTime, endTime);
+      if (status !== "active") {
+        alert("Attendance not available.");
+        return;
+      }
+
+      selectedScheduleId = scheduleId;
+      selectedClassDate = date;
+      currentStartTime = startTime;
+      currentEndTime = endTime;
+
+      document.getElementById("currentDate").textContent = date;
+      document.getElementById("attendanceSection").style.display = "block";
+
+      loadStudents().then(() => {
+        loadDraft();
+        renderStudentTable();
+      });
+    });
 }
-
+  
 // -----------------------------
 // Attendance History
 // -----------------------------
 function loadHistory() {
   fetch(`${API_BASE}/attendance/all?staffId=${staffId}`)
     .then(res => res.json())
-    .then(dates => {
+    .then(list => {
       const container = document.getElementById("historyContent");
       container.innerHTML = "";
 
-      if (dates.length === 0) {
+      if (list.length === 0) {
         container.innerHTML = "<p>No attendance history.</p>";
-      } else {
-        dates.forEach(date => {
-          const div = document.createElement("div");
-          div.innerHTML = `<strong>${date}</strong>`;
-          div.style.cursor = "pointer";
-          div.onclick = () => showSummary(date);
-          container.appendChild(div);
-        });
+        return;
       }
+
+      list.forEach(item => {
+        const div = document.createElement("div");
+        const dateLabel =
+        item.date && item.date !== "Unknown Date"
+        ? item.date
+        : (item.scheduleId?.date || "Unknown Date");
+        
+        const st = item.startTime || item.scheduleId?.startTime || "N/A";
+        const et = item.endTime || item.scheduleId?.endTime || "N/A";
+
+        div.innerHTML = `
+        <strong>${dateLabel}</strong>
+        (${st} - ${et})
+        `;
+
+        div.style.cursor = "pointer";
+
+        div.onclick = () => {
+          const sid = item.scheduleId || null;
+          showSummary(item.date, sid);
+        };
+
+        container.appendChild(div);
+      });
     })
     .catch(err => console.error(err));
 }
+
 
 // ⭐ RANK ORDER ADDED
 const RANK_ORDER = ["SUO", "UO", "CSM", "CQMS", "SGT", "CPL", "L/CPL", "CDT"];
 
 // ⭐ NEW — FULL GROUPING (CLASS → YEAR → SD/SW)
 function groupByClassFull(students) {
+  if (!Array.isArray(students)) return {};
+  
   const grouped = {};
-
+  
   students.forEach(s => {
     const cls = s.classSection || "Unknown";
 
@@ -432,11 +550,15 @@ function groupByClassFull(students) {
 }
 
 // ⭐ NEW — FULL FORMATTED SUMMARY
-function showSummary(date) {
-  fetch(`${API_BASE}/attendance/present/${date}?staffId=${staffId}`)
+function showSummary(date, scheduleId) {
+  fetch(`${API_BASE}/attendance/present/${date}?staffId=${staffId}&scheduleId=${scheduleId}`)
     .then(res => res.json())
     .then(list => {
-
+      if (!Array.isArray(list)) {
+        alert("No attendance data available for this date.");
+        return;
+      }
+      
       const grouped = groupByClassFull(list);
       const summaryEl = document.getElementById("summarySection");
       summaryEl.innerHTML = `<div><strong>Date:</strong> ${date}</div><br>`;
@@ -545,3 +667,5 @@ function getScheduleStatus(now, dateStr, start, end) {
   if (now >= startTime && now <= endTime) return "active";
   return "expired";
 }
+
+loadSchedules();

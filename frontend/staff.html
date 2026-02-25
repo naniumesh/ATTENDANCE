@@ -5,44 +5,23 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Staff Attendance</title>
   <link rel="stylesheet" href="css/staff.css" />
-  <style>
-    table { width: 100%; border-collapse: collapse; margin-top: 10px; }
-    th, td { border: 1px solid #ccc; padding: 8px; text-align: left; }
-    th { background-color: #f0f0f0; }
-    .student-item { display: flex; justify-content: space-between; margin-bottom: 5px; }
-    .staff-class-btn { margin-right: 5px; margin-bottom: 5px; }
-    #staffYearFilter { margin-left: 5px; }
-    .button { padding: 8px 15px; margin: 5px; cursor: pointer; }
-    .logout-btn { background: #f66; }
-    .cancel-btn { background: #ccc; }
-    .modal-box { background: white; padding: 20px; border-radius: 8px; }
-    #modalOverlay { 
-      position: fixed; top: 0; left: 0; width: 100%; height: 100%; 
-      background: rgba(0,0,0,0.6); display: flex; justify-content: center; align-items: center; 
-    }
-    header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: 10px;
-    }
-    .header-buttons { display: flex; gap: 10px; }
-  </style>
 </head>
 <body>
-  <!-- Header -->
+
+  <!-- ================= HEADER ================= -->
   <header>
     <div>
       <h1>Staff Attendance System</h1>
       <div id="staffInfo" style="font-weight:bold; margin-top:5px;"></div>
     </div>
+
     <div class="header-buttons">
       <button class="button" id="historyToggleBtn">History</button>
       <button class="button logout-btn" id="logoutBtn">Logout</button>
     </div>
   </header>
 
-  <!-- History Section -->
+  <!-- ================= HISTORY ================= -->
   <div id="historyContainer" style="display:none;">
     <h3>Attendance History</h3>
     <div id="historyContent"></div>
@@ -50,33 +29,38 @@
     <button id="closeHistoryBtn" class="button cancel-btn">Close History</button>
   </div>
 
-  <!-- Main Content -->
+  <!-- ================= MAIN ================= -->
   <main id="mainContent">
-    <!-- Schedule container -->
+
+    <!-- Schedule Buttons -->
     <div id="scheduleContainer"></div>
 
-    <!-- Attendance taking section -->
+    <!-- ================= ATTENDANCE ================= -->
     <div id="attendanceSection" style="display:none;">
       <h3>Take Attendance for <span id="currentDate"></span></h3>
 
       <!-- Class Buttons -->
-      <div id="staffClassButtons" style="margin-bottom: 10px;">
-        <button type="button" class="staff-class-btn" data-class="2 PB">2 PB</button>
-        <button type="button" class="staff-class-btn" data-class="2 PB(GIRLS)">2 PB(GIRLS)</button>
-        <button type="button" class="staff-class-btn" data-class="2 PB NAVY">2 PB NAVY</button>
-        <button type="button" class="staff-class-btn" data-class="8 PB(REGULAR)">8 PB(REGULAR)</button>
-        <button type="button" class="staff-class-btn" data-class="8 PB(FSFS)">8 PB(FSFS)</button>
-        <button type="button" class="staff-class-btn" data-class="1 AIR PB">AIR</button>
-        <button type="button" id="staffResetFilter">Show All</button>
+      <div id="staffClassButtons">
+        <button class="staff-class-btn" data-class="2 PB">2 PB</button>
+        <button class="staff-class-btn" data-class="2 PB(GIRLS)">2 PB(GIRLS)</button>
+        <button class="staff-class-btn" data-class="2 PB NAVY">2 PB NAVY</button>
+        <button class="staff-class-btn" data-class="8 PB(REGULAR)">8 PB(REGULAR)</button>
+        <button class="staff-class-btn" data-class="8 PB(FSFS)">8 PB(FSFS)</button>
+        <button class="staff-class-btn" data-class="1 AIR PB">AIR</button>
+        <button id="staffResetFilter">Show All</button>
       </div>
 
-      <!-- Year Filter (dynamically generated) -->
-      <div id="staffYearContainer" style="margin-bottom: 10px;"></div>
+      <!-- Year Filter -->
+      <div id="staffYearContainer"></div>
 
       <!-- Search -->
-      <input type="text" id="staffStudentSearch" placeholder="Search students..." style="margin-bottom: 10px;" />
+      <input
+        type="text"
+        id="staffStudentSearch"
+        placeholder="Search students..."
+      />
 
-      <!-- Student Table -->
+      <!-- ================= TABLE ================= -->
       <table id="staffAttendanceTable">
         <thead>
           <tr>
@@ -84,33 +68,51 @@
             <th>Name</th>
             <th>Reg No</th>
             <th>Roll No</th>
-            <th>Attendance</th>
+            <th>Present</th>
           </tr>
         </thead>
         <tbody></tbody>
       </table>
 
-      <!-- Submit Button -->
+      <!-- ================= SUBMIT ================= -->
       <div style="margin-top:15px;">
-        <button class="button" id="submitAttendance">Submit Attendance</button>
+        <button class="button" id="submitAttendance">
+          Submit Attendance
+        </button>
       </div>
 
       <!-- Count Summary -->
-      <div id="staffAttendanceCounts" style="margin-top: 15px; font-weight:bold;"></div>
+      <div id="staffAttendanceCounts" style="margin-top:15px;font-weight:bold;"></div>
     </div>
 
-    <!-- Confirmation modal -->
-    <div id="modalOverlay" style="display: none;">
+    <!-- ================= MODAL ================= -->
+    <div id="modalOverlay" style="display:none;">
       <div class="modal-box">
         <h3>Attendance Confirmation</h3>
-        <input type="number" id="confirmCount" placeholder="Total present count" />
-        <input type="password" id="confirmPin" placeholder="PIN" />
+
+        <!-- Total Count -->
+        <input
+          type="number"
+          id="confirmCount"
+          placeholder="Total present count"
+          readonly
+        />
+
+        <!-- PIN -->
+        <input
+          type="password"
+          id="confirmPin"
+          placeholder="PIN"
+        />
+
         <button class="button" id="confirmSubmitBtn">Submit</button>
         <button class="button cancel-btn" onclick="closeModal()">Cancel</button>
       </div>
     </div>
+
   </main>
 
+  <!-- ================= SCRIPT ================= -->
   <script src="js/staff.js" defer></script>
 </body>
 </html>

@@ -111,13 +111,107 @@
   </form>
 
   <!-- Excel Upload -->
-   
+  <hr>
+
+<!-- ================= STUDENT ACTIONS ================= -->
+
+<h3>⚙ Student Actions</h3>
+
+<button onclick="toggleDeleteYear()" style="background:#e74c3c;color:white;">
+  🗑 Delete Students
+</button>
+
+<button onclick="togglePromotion()" style="background:#27ae60;color:white;margin-left:10px;">
+  🎓 Promotion
+</button>
+
+<!-- ===== DELETE BY YEAR BLOCK ===== -->
+<div id="deleteYearBlock" style="display:none;margin-top:15px;">
+  <h3 style="color:red;">⚠ Delete Students by Year</h3>
+
+  <select id="deleteYearSelect">
+    <option value="">Select Year</option>
+    <option value="1">1st Year</option>
+    <option value="2">2nd Year</option>
+    <option value="3">3rd Year</option>
+  </select>
+
+  <button onclick="checkDeleteByYear()" style="background:#e67e22;color:white;">
+    Check Count
+  </button>
+
+  <button onclick="confirmDeleteByYear()" style="background:#c0392b;color:white;">
+    Confirm Delete
+  </button>
+
+  <p id="deleteYearInfo" style="font-weight:bold;"></p>
+</div>
+
+<!-- ===== PROMOTION BLOCK ===== -->
+<div id="promotionBlock" style="display:none;margin-top:15px;">
+  <h3 style="color:#27ae60;">🎓 Year Promotion</h3>
+
+  <select id="fromYear">
+    <option value="">From Year</option>
+    <option value="1">1st Year</option>
+    <option value="2">2nd Year</option>
+  </select>
+
+  <select id="toYear">
+    <option value="">To Year</option>
+    <option value="2">2nd Year</option>
+    <option value="3">3rd Year</option>
+  </select>
+
+  <button onclick="checkPromotion()" style="background:#2ecc71;color:white;">
+    Check Promotion
+  </button>
+
+  <button onclick="confirmPromotion()" style="background:#1e8449;color:white;">
+    Confirm Promotion
+  </button>
+
+  <p id="promotionInfo" style="font-weight:bold;"></p>
+</div>
+
   <!-- Excel Upload -->
-   <div style="margin: 15px 0; text-align: center;" class="upload-block">
-    <label for="excelFile">Choose File</label>
-    <input type="file" id="excelFile" />
-    <button type="button" onclick="uploadExcel()">Upload Excel</button>
-  </div>
+  <div class="upload-block">
+  <!-- CHOOSE FILE BUTTON -->
+  <label for="excelFile">Choose Excel File</label>
+
+  <!-- HIDDEN FILE INPUT -->
+  <input type="file" id="excelFile" accept=".xls,.xlsx" />
+
+  <!-- FILE NAME DISPLAY -->
+  <p id="selectedFileName" style="margin-top:6px;font-weight:bold;"></p>
+
+  <!-- UPLOAD BUTTON -->
+  <button type="button" id="uploadBtn" onclick="uploadExcel()">
+    Upload Excel
+  </button>
+</div>
+
+<h3 style="color:#e67e22;">🔁 Re-upload Excel File</h3>
+
+<input type="text" id="deleteFileName" placeholder="Enter Excel file name">
+
+<button onclick="checkDeleteByFile()" style="background:#f39c12;color:white;">
+  Check File
+</button>
+
+<button onclick="confirmDeleteByFile()" style="background:#c0392b;color:white;">
+  Delete & Allow Re-upload
+</button>
+
+<p id="deleteFileInfo" style="font-weight:bold;"></p>
+
+  <button
+  type="button"
+  onclick="downloadExcelTemplate()"
+  style="background:#2ecc71;color:white;padding:6px 12px;margin-bottom:10px;"
+>
+  ⬇ Download Excel Template FOR EXAMPLE
+</button>
 
   <!-- Search Only -->
   <div class="student-search-block">

@@ -31,6 +31,7 @@ async function cleanupExpiredSchedules() {
         const records = allStudentIds.map((sid) => ({
           studentId: sid,
           staffId: staff._id,
+          scheduleId: sch._id,
           classDate: sch.date,
           status: "Absent",
         }));
@@ -174,10 +175,10 @@ exports.updateAttendance = async (req, res) => {
       if (String(staff.pin).trim() !== String(pin).trim())
         return res.status(401).json({ message: "Invalid PIN." });
 
-      let record = await Attendance.findOne({ studentId, staffId, classDate: finalClassDate });
+      let record = await Attendance.findOne({ studentId, staffId, scheduleId, classDate: finalClassDate });
 
       if (record) record.status = status;
-      else record = await Attendance.create({ studentId, staffId, classDate: finalClassDate, status });
+      else record = await Attendance.create({ studentId, staffId, scheduleId, classDate: finalClassDate, status });
 
       await record.save();
 
@@ -263,18 +264,20 @@ exports.bulkAttendance = async (req, res) => {
 
     const bulk = [
       ...presentStudentIds.map((id) => ({
-        studentId: id,
-        staffId,
-        classDate: recordDate,
-        status: "Present",
-      })),
-      ...absentIDs.map((id) => ({
-        studentId: id,
-        staffId,
-        classDate: recordDate,
-        status: "Absent",
-      })),
-    ];
+      studentId: id,
+      staffId,
+      scheduleId,
+      classDate: recordDate,
+      status: "Present",
+    })),
+    ...absentIDs.map((id) => ({
+      studentId: id,
+      staffId,
+      scheduleId,
+      classDate: recordDate,
+      status: "Absent",
+    })),
+  ];
 
     await Attendance.insertMany(bulk, { ordered: false }).catch((err) => {
       if (err.code !== 11000) throw err;
@@ -309,18 +312,35 @@ exports.bulkAttendance = async (req, res) => {
 exports.getStudentsPresentOnDate = async (req, res) => {
   try {
     const date = req.params.date;
-    const ids = await Attendance.distinct("studentId", { classDate: date, status: "Present" });
+    const scheduleId = req.query.scheduleId;
+
+    let match = {
+      classDate: date,
+      status: "Present"
+    };
+
+    if (
+      scheduleId &&
+      scheduleId !== "null" &&
+      mongoose.Types.ObjectId.isValid(scheduleId)
+    ) {
+      match.scheduleId = new mongoose.Types.ObjectId(scheduleId);
+    }
+
+    // 🔥 KEY CHANGE: REMOVE staffId filter
+    const presentStudentIds = await Attendance.distinct("studentId", match);
 
     const students = await Student.find(
-      { _id: { $in: ids } },
+      { _id: { $in: presentStudentIds } },
       "name rollNo regNo classSection gender year rank"
     ).lean();
-    
+
     res.json(students);
   } catch (err) {
-    res.status(500).json({ message: "Failed to fetch present list" });
+    res.status(500).json({ message: "Failed to fetch compiled attendance" });
   }
 };
+
 
 /* ---------------------------------------------------------
    GET SCHEDULES
@@ -356,13 +376,46 @@ exports.getSchedules = async (req, res) => {
 --------------------------------------------------------- */
 exports.getAllAttendanceDates = async (req, res) => {
   try {
-    const all = await Attendance.find({});
-    const dates = [...new Set(all.map((a) => a.classDate))];
-    res.json(dates);
+    const staffId = req.query.staffId;
+
+    const histories = await ClassHistory.find({ staffId })
+      .populate("scheduleId")
+      .lean();
+
+    const items = histories.map(h => {
+      const date =
+        h.classDate ||
+        h.scheduleId?.date ||
+        "Unknown Date";
+
+      const startTime =
+        h.startTime ||
+        h.scheduleId?.startTime ||
+        "N/A";
+
+      const endTime =
+        h.endTime ||
+        h.scheduleId?.endTime ||
+        "N/A";
+
+      return {
+        scheduleId: h.scheduleId?._id || null,
+        date,
+        startTime,
+        endTime
+      };
+    });
+
+    res.json(items);
   } catch (err) {
-    res.status(500).json({ message: "Failed to fetch dates" });
+    res.status(500).json({
+      message: "Failed to fetch dates",
+      error: err.message
+    });
   }
 };
+
+
 
 /* ---------------------------------------------------------
    ADVANCED CLASS HISTORY REPORT

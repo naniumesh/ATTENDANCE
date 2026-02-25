@@ -50,37 +50,109 @@ exports.createStudent = async (req, res) => {
 // Upload & parse Excel file
 exports.uploadExcel = async (req, res) => {
   try {
-    if (!req.file) return res.status(400).send("No file uploaded");
+    if (!req.file) {
+      return res.status(400).json({ message: "No file uploaded" });
+    }
+
+    const fileName = req.file.originalname;
+
+    const alreadyUploaded = await Student.findOne({ uploadedFile: fileName });
+    if (alreadyUploaded) {
+      return res.status(400).json({
+        message: "This Excel file was already uploaded",
+        fileName
+      });
+    }
 
     const workbook = XLSX.readFile(req.file.path);
     const sheetName = workbook.SheetNames[0];
     const sheetData = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName]);
 
-    const students = sheetData.map(row => ({
-      name: row.name || "",
-      rank: row.rank || "",
-      rollNo: row.rollNo || "",
-      regNo: row.regNo || "NA",
-      dob: parseExcelDate(row.dob),
-      contactNo: row.contactNo || "",
-      gender: row.gender || "",
-      year: row.year || "",
-      classSection: row.classSection || ""
-    }));
+    const seen = new Set();
+    const students = [];
+
+    for (const row of sheetData) {
+      // ---------- REQUIRED FIELDS ----------
+      const name = row.name || row.Name || row["NAME"] || "";
+      const rank = row.rank || row.Rank || "";
+      const classSection = row.classSection || row.Battalion || row["Battalion"] || "";
+      const rawGender = row.gender || row.Gender || "";
+      const year = row.year || row.Year || "";
+
+      // ---------- OPTIONAL FIELDS ----------
+      const regNo = row.regNo || row["Reg No"] || row["Registration No"] || "NA";
+      const rollNo = row.rollNo || row["Roll No"] || "NA";
+      const dob = row.dob || row.DOB || row["Date of Birth"];
+      const contactNo = row.contactNo || row["Contact No"] || "NA";
+
+      // ---------- NORMALIZATION ----------
+      const cleanName = String(name).trim();
+      const cleanRank = String(rank).trim();
+      const cleanClass = String(classSection).trim();
+      const cleanYear = String(year).trim();
+
+      let gender = String(rawGender).trim().toLowerCase();
+      if (gender === "m" || gender === "male") gender = "male";
+      else if (gender === "f" || gender === "female") gender = "female";
+      else gender = "NA";
+
+      // ---------- ENFORCE REQUIRED RULE ----------
+      if (!cleanName || !cleanRank || !cleanClass || !cleanYear || gender === "NA") {
+        continue;
+      }
+
+      const key = `${cleanName}_${regNo}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+
+      students.push({
+        name: cleanName,
+        rank: cleanRank,
+        rollNo: rollNo || "NA",
+        regNo: String(regNo).trim() || "NA",
+        dob: parseExcelDate(dob),
+        contactNo: contactNo || "NA",
+        gender,
+        year: cleanYear,
+        classSection: cleanClass,
+        uploadedFile: fileName
+      });
+    } // ✅ FOR LOOP CLOSED HERE
+
+    // ---------- AFTER LOOP ----------
+    if (students.length === 0) {
+      return res.status(400).json({
+        message: "No valid students found in Excel",
+        fileName
+      });
+    }
 
     await Student.insertMany(students);
 
-    const displayStudents = students.map(s => ({
-      ...s,
-      regNo: s.regNo || "NA"
-    }));
+    res.status(200).json({
+      message: "Excel uploaded successfully",
+      fileName,
+      inserted: students.length
+    });
 
-    res.status(200).json({ message: "Students uploaded successfully", students: displayStudents });
-  } catch (error) {
-    console.error("Error uploading students from Excel:", error);
-    res.status(500).json({ error: error.message });
+  } catch (err) {
+    console.error("Excel upload error:", err);
+
+    if (err.code === 11000) {
+      return res.status(400).json({
+        message: "Duplicate student or file detected",
+        error: err.keyValue
+      });
+    }
+
+    res.status(500).json({
+      message: "Excel upload failed",
+      error: err.message
+    });
   }
 };
+
+
 
 // Get all students
 exports.getAllStudents = async (req, res) => {
@@ -161,5 +233,189 @@ exports.deleteStudent = async (req, res) => {
   } catch (err) {
     console.error("Error deleting student:", err);
     res.status(500).json({ message: "Failed to delete student", error: err.message });
+  }
+};
+
+// ===============================
+// DELETE STUDENTS BY YEAR
+// ===============================
+exports.deleteStudentsByYear = async (req, res) => {
+  try {
+    // DELETE body fallback safety
+    const year = req.body?.year || req.query?.year;
+    const confirm = req.body?.confirm;
+
+    if (!["1", "2", "3"].includes(String(year))) {
+      return res.status(400).json({ message: "Invalid year. Use 1, 2 or 3." });
+    }
+
+    const students = await Student.find({ year: String(year) });
+
+    let boys = 0;
+    let girls = 0;
+
+    students.forEach(s => {
+      if ((s.gender || "").toLowerCase() === "male") boys++;
+      if ((s.gender || "").toLowerCase() === "female") girls++;
+    });
+
+    // 🟡 Only preview counts
+    if (!confirm) {
+      return res.json({
+        year,
+        boys,
+        girls,
+        total: students.length,
+        confirmRequired: true
+      });
+    }
+
+    // 🔴 CONFIRMED DELETE
+    await Student.deleteMany({ year: String(year) });
+
+    res.json({
+      message: `Deleted ${students.length} students of Year ${year}`,
+      year,
+      boys,
+      girls,
+      total: students.length
+    });
+
+  } catch (err) {
+    console.error("Delete-by-year error:", err);
+    res.status(500).json({ message: err.message });
+  }
+};
+
+// ===============================
+// DOWNLOAD EXCEL TEMPLATE
+// ===============================
+exports.downloadExcelTemplate = (req, res) => {
+  const headers = [[
+    "Name",
+    "Rank",
+    "Battalion",
+    "Gender",
+    "Year",
+    "Roll No",
+    "Reg No",
+    "Contact No",
+    "DOB"
+  ]];
+
+  const exampleRow = [[
+    "MALEMKONDU UMESH",
+    "CQMS",
+    "2 PB",
+    "Male",
+    "3",
+    "PB23SDA",
+    "1221",
+    "7986909910",
+    "2004-04-21"
+  ]];
+
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.aoa_to_sheet([...headers, ...exampleRow]);
+
+  XLSX.utils.book_append_sheet(wb, ws, "Students");
+
+  res.setHeader(
+    "Content-Disposition",
+    "attachment; filename=student_upload_template.xlsx"
+  );
+  res.setHeader(
+    "Content-Type",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+  );
+
+  const buffer = XLSX.write(wb, { type: "buffer", bookType: "xlsx" });
+  res.send(buffer);
+};
+
+// ===============================
+// DELETE STUDENTS BY UPLOADED FILE
+// ===============================
+exports.deleteStudentsByFile = async (req, res) => {
+  try {
+    const { fileName, confirm } = req.body;
+
+    if (!fileName) {
+      return res.status(400).json({ message: "File name is required" });
+    }
+
+    const students = await Student.find({ uploadedFile: fileName });
+
+    if (students.length === 0) {
+      return res.status(404).json({ message: "No students found for this file" });
+    }
+
+    // Preview only
+    if (!confirm) {
+      return res.json({
+        fileName,
+        total: students.length,
+        confirmRequired: true
+      });
+    }
+
+    // Confirmed delete
+    await Student.deleteMany({ uploadedFile: fileName });
+
+    res.json({
+      message: `Deleted ${students.length} students uploaded from ${fileName}`,
+      deleted: students.length
+    });
+
+  } catch (err) {
+    console.error("Delete-by-file error:", err);
+    res.status(500).json({ message: err.message });
+  }
+};
+
+// ===============================
+// PROMOTE STUDENTS BY YEAR
+// ===============================
+exports.promoteStudents = async (req, res) => {
+  try {
+    const { fromYear, toYear, confirm } = req.body;
+
+    if (!["1", "2"].includes(String(fromYear)) || !["2", "3"].includes(String(toYear))) {
+      return res.status(400).json({ message: "Invalid year selection" });
+    }
+
+    if (String(fromYear) === String(toYear)) {
+      return res.status(400).json({ message: "From and To year cannot be same" });
+    }
+
+    const students = await Student.find({ year: String(fromYear) });
+
+    if (students.length === 0) {
+      return res.status(404).json({ message: "No students found in selected year" });
+    }
+
+    // Preview only
+    if (!confirm) {
+      return res.json({
+        fromYear,
+        toYear,
+        total: students.length,
+        confirmRequired: true
+      });
+    }
+
+    await Student.updateMany(
+      { year: String(fromYear) },
+      { $set: { year: String(toYear) } }
+    );
+
+    res.json({
+      message: `Promoted ${students.length} students from Year ${fromYear} to Year ${toYear}`,
+      total: students.length
+    });
+
+  } catch (err) {
+    console.error("Promotion error:", err);
+    res.status(500).json({ message: err.message });
   }
 };

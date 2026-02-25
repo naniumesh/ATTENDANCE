@@ -1,4 +1,4 @@
-const API_BASE = "http://localhost:5000/api";
+const API_BASE = "https://attendance-jmxr.onrender.com/api";
 
 // Show/hide sections
 function showSection(sectionId) {
@@ -1159,4 +1159,5 @@ function togglePromotion() {
   if (del) del.style.display = "none";
 
   promo.style.display = promo.style.display === "none" ? "block" : "none";
+
 }

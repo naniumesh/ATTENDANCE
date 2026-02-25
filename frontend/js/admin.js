@@ -571,7 +571,7 @@ async function fetchSchedules() {
 
 // Delete schedule
 async function deleteSchedule(id) {
-  const pin = prompt("Enter admin PIN to cancel this class:");
+  const pin = prompt("Enter admin PIN to cancel this class(WHICH YEAR NCC WAS ESTABLISHED IN INDIA):");
   if (!pin) return alert("PIN is required to cancel the class.");
   if (pin !== "1948") return alert("Invalid PIN. Cancellation denied.");
 
@@ -1161,3 +1161,4 @@ function togglePromotion() {
   promo.style.display = promo.style.display === "none" ? "block" : "none";
 
 }
+
